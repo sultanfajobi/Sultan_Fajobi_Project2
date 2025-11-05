@@ -1,79 +1,70 @@
-# Step 5 — Model Testing / Inference
-# AER850 Section 01 Project 2
-# Sultan Fajobi (501106769)
+# STEP 5 - MODEL TESTING AND EVALUATION (Sultan Fajobi)
 
-import json
-from pathlib import Path
+import os, json
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 
-# --- Paths & constants ---
-ROOT = Path(__file__).resolve().parent
-IMG_SIZE = (500, 500)
+# --------------------------------------------------
+# Load class mapping from Steps 1–4
+# --------------------------------------------------
+with open("class_indices.json", "r") as f:
+    class_indices = json.load(f)
 
-# Prefer model;
-MODEL_PATHS = [ROOT / "sultan_model.keras"]
-
-model_path = None
-for p in MODEL_PATHS:
-    if p.exists():
-        model_path = p
-        break
-if model_path is None:
-    raise FileNotFoundError("No trained model found")
-
-# Load class mapping saved in Steps 1–4 (ensures correct label order)
-class_map_path = ROOT / "class_indices.json"
-if class_map_path.exists():
-    with open(class_map_path) as f:
-        class_to_idx = json.load(f)          # e.g., {'crack':0,'missing-head':1,'paint-off':2}
-    idx_to_class = {v: k for k, v in class_to_idx.items()}
-    class_names = [idx_to_class[i] for i in range(len(idx_to_class))]
-else:
-    # Fallback (only if mapping file not found)
-    print("[WARN] class_indices.json not found; falling back to default class order.")
-    class_names = ["crack", "missing-head", "paint-off"]
-
-print("Using model:", model_path.name)
+# Convert index mapping back to readable list
+class_names = list(class_indices.keys())
 print("Class order:", class_names)
 
-# Define the path to the three test images
-TEST = ROOT / "Data" / "Test"
+# --------------------------------------------------
+# Detect which trained model to load (V1 or V2)
+# --------------------------------------------------
+model_path = None
+for name in ["sultan_model_v2.keras", "sultan_model_v1.keras", "sultan_model.keras"]:
+    if os.path.exists(name):
+        model_path = name
+        break
+
+if model_path is None:
+    raise FileNotFoundError("No trained model found (expected sultan_model_v1.keras or sultan_model_v2.keras).")
+
+print(f"Using model: {model_path}\n")
+model = tf.keras.models.load_model(model_path)
+
+# --------------------------------------------------
+# Define test images 
+# --------------------------------------------------
 test_images = {
-    "crack":       TEST / "crack"        / "test_crack.jpg",
-    "missing-head":TEST / "missing-head" / "test_missinghead.jpg",
-    "paint-off":   TEST / "paint-off"    / "test_paintoff.jpg",
+    "crack": "/Users/sultan/Documents/GitHub/AER850 PROJ1/Sultan_Fajobi_Project2/Dataproj2/Data/Test/crack/test_crack.jpg",
+    "missing-head": "/Users/sultan/Documents/GitHub/AER850 PROJ1/Sultan_Fajobi_Project2/Dataproj2/Data/Test/missing-head/test_missinghead.jpg",
+    "paint-off": "/Users/sultan/Documents/GitHub/AER850 PROJ1/Sultan_Fajobi_Project2/Dataproj2/Data/Test/paint-off/test_paintoff.jpg"
 }
 
-# --- Load the trained model ---
-model = tf.keras.models.load_model(str(model_path))
-
-def process_and_predict(image_path: Path):
-    """Load an image, preprocess to (500,500)/[0,1], predict class + confidence."""
-    if not image_path.exists():
-        raise FileNotFoundError(f"Missing test image: {image_path}")
-    img = load_img(image_path, target_size=IMG_SIZE)
+# --------------------------------------------------
+# Prediction function
+# --------------------------------------------------
+def predict_image(img_path):
+    img = load_img(img_path, target_size=(500, 500))
     arr = img_to_array(img) / 255.0
-    arr = np.expand_dims(arr, axis=0)  # (1, H, W, 3)
+    arr = np.expand_dims(arr, axis=0)
+    
+    preds = model.predict(arr)
+    idx = np.argmax(preds)
+    conf = preds[0][idx]
+    predicted_label = class_names[idx]
+    return predicted_label, conf, img
 
-    preds = model.predict(arr, verbose=0)          # shape (1, num_classes)
-    pred_idx = int(np.argmax(preds, axis=1)[0])
-    pred_label = class_names[pred_idx]
-    confidence = float(preds[0][pred_idx])
-
-    return pred_label, confidence, img
-
-# --- Run predictions & display ---
-for actual_label, image_path in test_images.items():
-    try:
-        pred_label, conf, img = process_and_predict(image_path)
-        plt.figure()
-        plt.imshow(img)
-        plt.title(f"Actual: {actual_label} | Predicted: {pred_label} ({conf*100:.2f}%)")
-        plt.axis('off')
-        plt.show()
-        print(f"[OK] {image_path.name}: actual={actual_label}  predicted={pred_label}  conf={conf:.3f}")
-    except FileNotFoundError as e:
-        print("[WARN]", e)
+# --------------------------------------------------
+# Run predictions and display results
+# --------------------------------------------------
+for actual_label, path in test_images.items():
+    predicted_label, conf, img = predict_image(path)
+    
+    print(f"[TEST] {os.path.basename(path)}: actual={actual_label}  predicted={predicted_label}  conf={conf:.3f}")
+    
+    # Show image with label
+    plt.figure()
+    plt.imshow(img)
+    plt.title(f"Actual: {actual_label},  Predicted: {predicted_label} ({conf*100:.1f}%)")
+    plt.axis("off")
+    plt.show()
